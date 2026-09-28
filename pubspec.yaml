@@ -1,0 +1,39 @@
+name: smart_medicine_organizer
+description: "Smart Medicine Companion mobile app linked with ESP32 6-compartment hardware organizer via Firebase."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.0.1
+  firebase_messaging: ^15.0.1
+  provider: ^6.1.2
+  intl: ^0.19.0
+  google_fonts: ^6.2.1
+  shared_preferences: ^2.2.3
+  flutter_local_notifications: ^17.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icon/app_icon.png

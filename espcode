@@ -1,0 +1,114 @@
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+
+using namespace std;
+
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+
+#define API_KEY "YOUR_FIREBASE_API_KEY"
+#define FIREBASE_PROJECT_ID "YOUR_FIREBASE_PROJECT_ID"
+#define DEVICE_ID "ESP32_001"
+
+// Device credentials created in Firebase Console
+#define USER_EMAIL "YOUR_USER_EMAIL"
+#define USER_PASSWORD "YOUR_USER_PASSWORD"
+
+const int REED_PINS[6] = {13, 12, 14, 27, 26, 25};
+const int LED_GREEN_PIN = 32;
+const int LED_RED_PIN   = 33;
+const int BUZZER_PIN    = 15;
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+unsigned long lastHeartbeat = 0;
+
+void updateDeviceHeartbeat();
+void checkReedSwitches();
+void sendLidTriggerToFirestore(int compartmentId, bool isOpen);
+
+void setup() {
+  Serial.begin(115200);
+
+  for (int i = 0; i < 6; i++) {
+    pinMode(REED_PINS[i], INPUT_PULLUP);
+  }
+  pinMode(LED_GREEN_PIN, OUTPUT);
+  pinMode(LED_RED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi Connected! IP: " + WiFi.localIP().toString());
+
+  config.api_key = API_KEY;
+  config.database_url = "https://smart-medicine-organizer-default-rtdb.firebaseio.com";
+  
+  auth.user.email = USER_EMAIL;
+  auth.user.password = USER_PASSWORD;
+  
+  config.token_status_callback = tokenStatusCallback;
+  
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+}
+
+void loop() {
+  if (Firebase.ready() && (millis() - lastHeartbeat > 10000 || lastHeartbeat == 0)) {
+    lastHeartbeat = millis();
+    updateDeviceHeartbeat();
+  }
+  checkReedSwitches();
+}
+
+void updateDeviceHeartbeat() {
+  String path = "deviceState/" DEVICE_ID;
+  FirebaseJson content;
+  content.set("fields/isOnline/booleanValue", true);
+  content.set("fields/batteryLevel/integerValue", 85);
+
+  if (Firebase.Firestore.patchDocument(&fbdo, FIREBASE_PROJECT_ID, "", path.c_str(), content.raw(), "isOnline,batteryLevel")) {
+    Serial.println("Heartbeat sent to Firestore!");
+  } else {
+    Serial.println("Heartbeat error: " + fbdo.errorReason());
+  }
+}
+
+void checkReedSwitches() {
+  static bool lastState[6] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH};
+  for (int i = 0; i < 6; i++) {
+    bool currentState = digitalRead(REED_PINS[i]);
+    if (currentState != lastState[i]) {
+      lastState[i] = currentState;
+      int compartmentId = i + 1;
+      bool isOpen = (currentState == HIGH);
+      Serial.printf("Compartment %d Lid: %s\n", compartmentId, isOpen ? "OPEN" : "CLOSED");
+      sendLidTriggerToFirestore(compartmentId, isOpen);
+    }
+  }
+}
+
+void sendLidTriggerToFirestore(int compartmentId, bool isOpen) {
+  if (!Firebase.ready()) return;
+  String path = "deviceState/" DEVICE_ID;
+  digitalWrite(LED_GREEN_PIN, isOpen ? HIGH : LOW);
+
+  FirebaseJson content;
+  content.set("fields/isOnline/booleanValue", true);
+  content.set("fields/compartmentStatus/arrayValue/values/[0]/mapValue/fields/id/integerValue", compartmentId);
+  content.set("fields/compartmentStatus/arrayValue/values/[0]/mapValue/fields/isOpen/booleanValue", isOpen);
+  content.set("fields/compartmentStatus/arrayValue/values/[0]/mapValue/fields/ledOn/booleanValue", isOpen);
+  content.set("fields/compartmentStatus/arrayValue/values/[0]/mapValue/fields/ledColor/stringValue", isOpen ? "GREEN" : "OFF");
+
+  if (Firebase.Firestore.patchDocument(&fbdo, FIREBASE_PROJECT_ID, "", path.c_str(), content.raw(), "isOnline,compartmentStatus")) {
+    Serial.println("Lid trigger synced with Mobile App!");
+  }
+}
